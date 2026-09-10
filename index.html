@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Гарантийная работа КАМАЗ — тест (демо)</title>
+<title>Гарантийная работа КАМАЗ — тест</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
@@ -152,7 +152,6 @@
     transform: translate(-50%, -50%);
     font-size: 26px;
     font-weight: 700;
-    color: #16a34a;
   }
   .chart-legend {
     display: flex;
@@ -193,6 +192,16 @@
     color: #666;
     margin-top: 4px;
   }
+  .menu-btn-reset {
+    border-color: #dc2626;
+    color: #dc2626;
+  }
+  .menu-btn-reset:hover { background: #fef2f2; }
+  .menu-btn-continue {
+    border-color: #16a34a;
+    color: #16a34a;
+  }
+  .menu-btn-continue:hover { background: #f0fdf4; }
   .section-item {
     display: flex; justify-content: space-between; align-items: center;
     padding: 14px 16px;
@@ -239,10 +248,7 @@
     transition: all 0.15s;
   }
   .question-list-item:hover { border-color: #2563eb; background: #f8faff; }
-  .question-list-text {
-    font-size: 14px;
-    flex: 1;
-  }
+  .question-list-text { font-size: 14px; flex: 1; }
   .question-list-status {
     flex-shrink: 0;
     font-size: 18px;
@@ -266,6 +272,7 @@
     z-index: 1000;
     opacity: 0;
     transition: opacity 0.3s;
+    pointer-events: none;
   }
   .toast.show { opacity: 1; }
   .exit-bar {
@@ -278,6 +285,40 @@
     border-radius: 6px;
   }
   .exit-bar button:hover { background: #f3f4f6; color: #111; }
+  .history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 14px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    background: #fff;
+  }
+  .history-info { flex: 1; }
+  .history-date { font-size: 12px; color: #888; }
+  .history-score { font-size: 18px; font-weight: 700; margin-right: 12px; }
+  .history-score.pass { color: #16a34a; }
+  .history-score.fail { color: #dc2626; }
+  .history-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .history-btn {
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1.5px solid #2563eb;
+    background: #fff;
+    color: #2563eb;
+  }
+  .history-btn:hover { background: #eff6ff; }
+  .history-btn.danger {
+    border-color: #dc2626;
+    color: #dc2626;
+  }
+  .history-btn.danger:hover { background: #fef2f2; }
 </style>
 </head>
 <body>
@@ -286,35 +327,36 @@
 
 <script>
 const PASS_THRESHOLD = 70;
+const QUIZ_SIZE = 10;
+const PRIORITY_WEIGHT = 0.6;
 
-// Хранилище прогресса
-const STORAGE_KEY = 'kamaz_test_progress_v1';
+const PROGRESS_KEY = 'kamaz_mittu_progress_v1';
+const QUIZ_STATE_KEY = 'kamaz_mittu_quiz_state_v1';
+const HISTORY_KEY = 'kamaz_mittu_history_v1';
 
-function loadProgress() {
+function loadJSON(key, fallback) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
     return JSON.parse(raw);
-  } catch (e) { return null; }
+  } catch (e) { return fallback; }
 }
 
-function saveProgress(data) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (e) {}
+function saveJSON(key, data) {
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch (e) {}
 }
 
-function clearProgress() {
-  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+function removeKey(key) {
+  try { localStorage.removeItem(key); } catch (e) {}
 }
 
-// Банк вопросов (демо — 10 шт)
+// Банк вопросов — 10 демо с цитатами из Руководства по гарантийной политике
 const QUESTION_BANK = [
   {
     type: "single",
     section: "1. Гарантия на автотехнику",
-    ref: "слайд «Гарантия на АКБ»",
-    source: "Гарантия на АКБ 12 мес. без ограничения пробега автотехники, но не более 24 мес. с даты изготовления АКБ",
+    ref: "п. 3.1 (АКБ)",
+    source: "ПАО «КАМАЗ» принимает к рассмотрению претензии по качеству АКБ в составе автотехники КАМАЗ в течение 12 месяцев с даты реализации автотехники потребителю, но не более 24 месяцев с даты изготовления АКБ (указана на информационной табличке АКБ), без ограничения по пробегу, при условии соблюдения правил по хранению, эксплуатации и обслуживанию аккумуляторных батарей.",
     q: "Какой срок гарантии на АКБ?",
     options: [
       "6 месяцев без ограничения пробега",
@@ -327,12 +369,12 @@ const QUESTION_BANK = [
   {
     type: "single",
     section: "1. Гарантия на автотехнику",
-    ref: "слайд «Гарантия на шины»",
-    source: "Гарантия на шины <24 мес. или пробег гарантии на автотехнику в зависимости от того, что наступит раньше.",
+    ref: "п. 3.1 (шины)",
+    source: "Претензии по качеству шин в составе автотехники КАМАЗ принимаются к рассмотрению в течение 24 месяцев с даты реализации автотехники потребителю с ограничением по пробегу в соответствии с договором купли-продажи автотехники и информацией, указанной в карточке автотехники в ИС «1С: ГОА» (за исключением дефектов шин, возникших по вине эксплуатации, и естественного износа).",
     q: "Какой срок гарантии на шины?",
     options: [
       "12 месяцев",
-      "24 месяца или пробег гарантии на автотехнику — что наступит раньше",
+      "24 месяца с даты реализации или ограничение по пробегу — что наступит раньше",
       "36 месяцев",
       "Без ограничений"
     ],
@@ -341,8 +383,8 @@ const QUESTION_BANK = [
   {
     type: "single",
     section: "2. Гарантия на запасные части",
-    ref: "слайд «Гарантия на запасные части»",
-    source: "Гарантия на запасные части производства ПАО «КАМАЗ»: 12 мес. или 50 тыс. км с момента установки.",
+    ref: "п. 3.4.1",
+    source: "Гарантийный срок на запасные части производства ПАО «КАМАЗ» составляет (если иное не предусмотрено в паспорте изделия) 12 месяцев с даты их установки на автотехнику или 50 тыс. км пробега, в зависимости от того, что наступит раньше, при условии, что запасная часть установлена на автотехнику не позднее 12 месяцев с даты ее изготовления.",
     q: "Какой гарантийный срок на запасные части производства ПАО «КАМАЗ»?",
     options: [
       "6 месяцев или 30 тыс. км",
@@ -355,8 +397,8 @@ const QUESTION_BANK = [
   {
     type: "single",
     section: "2. Гарантия на запасные части",
-    ref: "слайд «Гарантия на запасные части»",
-    source: "Гарантия на запасные части производства заводов-смежников ПАО «КАМАЗ»: 12 мес. или 100 тыс. км с момента установки.",
+    ref: "п. 3.4.2",
+    source: "Гарантийный срок на запасные части производства заводов-смежников составляет 12 месяцев с даты их установки на автотехнику или 100 тыс. км пробега, в зависимости от того, что наступит раньше, при условии, что запасная часть установлена на автотехнику не позднее 6 месяцев с даты ее поставки в АЗК.",
     q: "Какой гарантийный срок на запасные части производства заводов-смежников?",
     options: [
       "6 месяцев или 30 тыс. км",
@@ -369,8 +411,8 @@ const QUESTION_BANK = [
   {
     type: "single",
     section: "3. Регистрация даты начала гарантии",
-    ref: "слайд «Регистрация даты начала гарантии»",
-    source: "Реализация автотехники через дилера — дата передачи автотехники первым дилером / партнёром третьему лицу. Документ — акт приёма-передачи между первым дилером и третьим лицом.",
+    ref: "п. 1.2",
+    source: "Гарантийный срок исчисляется с даты реализации автотехники ПАО «КАМАЗ» либо его уполномоченным представителем (субъектом дилерской сети, официальным партнером) третьему лицу.",
     q: "С какой даты начинается гарантийный срок при реализации автотехники через дилера?",
     options: [
       "С даты изготовления на заводе",
@@ -383,8 +425,8 @@ const QUESTION_BANK = [
   {
     type: "single",
     section: "3. Регистрация даты начала гарантии",
-    ref: "слайд «Регистрация даты начала гарантии»",
-    source: "Искл.: Реализация автотехники субъекту МЧС РФ — дата ввода автотехники в эксплуатацию. Документ — приказ командира части.",
+    ref: "п. 1.2 (МЧС)",
+    source: "На автотехнику, поставляемую для нужд МЧС России, гарантийный срок начинает исчисляться с даты ввода автомобиля в эксплуатацию.",
     q: "С какой даты начинается гарантия для автотехники, поставленной МЧС РФ?",
     options: [
       "С даты реализации",
@@ -397,8 +439,8 @@ const QUESTION_BANK = [
   {
     type: "single",
     section: "4. Восстановление автотехники",
-    ref: "слайд «Восстановление автотехники»",
-    source: "Целевой показатель ≤ 5 календарных дней.",
+    ref: "п. 3.5.1",
+    source: "В случае признания отказа автотехники гарантийным случаем, Сервисный центр обязан своими силами и средствами восстановить автотехнику в кратчайший срок, но не позднее 5 календарных дней с момента обращения потребителя.",
     q: "Каков целевой показатель срока восстановления автотехники?",
     options: [
       "Не более 3 календарных дней",
@@ -411,8 +453,8 @@ const QUESTION_BANK = [
   {
     type: "single",
     section: "4. Восстановление автотехники",
-    ref: "слайд «Восстановление автотехники»",
-    source: "Использование неоригинальных запасных частей допускается только при согласовании ООО «АвтоЗапчасть КАМАЗ» (на prs@kamaz.ru письмо на официальном бланке сервисного центра с запросом и приложением счёта на оплату).",
+    ref: "п. 3.5.1",
+    source: "В случае отсутствия на гарантийном или коммерческом складе деталей, необходимых для устранения производственного дефекта, Сервисный центр имеет право, по согласованию с АЗК, использовать аналогичные детали других изготовителей. Для согласования использования при ремонте автотехники аналогов запасных частей и материалов, Сервисному центру необходимо направить официальное письмо с соответствующим запросом и приложением счета на оплату на эл. почту: prs@kamaz.ru.",
     q: "Как согласовать использование неоригинальных запасных частей при гарантийном ремонте?",
     options: [
       "Никак — запрещено",
@@ -425,8 +467,8 @@ const QUESTION_BANK = [
   {
     type: "single",
     section: "5. Предварительное одобрение",
-    ref: "слайд «Предварительное одобрение»",
-    source: "Стоимость ремонта не менее 200 тыс. руб. Не более 4 в месяц от СЦ.",
+    ref: "п. 3.9",
+    source: "При проведении дорогостоящего ремонта (если общая сумма затрат по рекламационному акту, включая транспортные и командировочные расходы, превышает 200 тыс. руб.) Сервисный центр посредством ИС «1С: ГОА» имеет возможность до проведения восстановительного ремонта автотехники направить в АЗК рекламационный акт для рассмотрения и принятия предварительного решения по дефекту.",
     q: "При какой минимальной стоимости ремонта требуется предварительное одобрение?",
     options: [
       "Более 50 тыс. руб.",
@@ -439,8 +481,8 @@ const QUESTION_BANK = [
   {
     type: "single",
     section: "5. Предварительное одобрение",
-    ref: "слайд «Предварительное одобрение»",
-    source: "Не более 4 в месяц от СЦ рекламационных актов для предварительного одобрения.",
+    ref: "п. 3.9",
+    source: "Максимальное количество рекламационных актов, предъявленных Сервисным центром в АЗК для предварительного одобрения, не должно превышать 4-х в месяц.",
     q: "Сколько рекламационных актов в месяц СЦ может подать на предварительное одобрение?",
     options: ["Не более 2", "Не более 4", "Не более 10", "Без ограничений"],
     correct: [1]
@@ -450,16 +492,17 @@ const QUESTION_BANK = [
 
 const app = document.getElementById('app');
 let state = {
-  screen: 'menu',           // menu | sections | sectionQuestions | quiz | results | questionView
-  quiz: [],                 // массив вопросов текущего теста
-  answers: [],              // ответы пользователя по индексам теста (null | массив индексов)
-  answered: [],             // показан ли разбор
-  skipped: [],              // пропущен ли вопрос
-  current: 0,               // текущий вопрос
-  sectionKey: null,         // выбранный раздел в оглавлении
-  viewQuestionIdx: null,    // индекс вопроса для просмотра из оглавления
-  // прогресс по каждому вопросу банка (для оглавления)
-  progress: loadProgress() || {}
+  screen: 'menu',
+  quiz: [],
+  answers: [],
+  answered: [],
+  skipped: [],
+  current: 0,
+  sectionKey: null,
+  viewQuestionIdx: null,
+  viewAnswer: null,
+  viewAnswered: false,
+  progress: loadJSON(PROGRESS_KEY, {})
 };
 
 // ===== УТИЛИТЫ =====
@@ -497,23 +540,19 @@ function showToast(text) {
   setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-// Ключ для прогресса: section + q (текст вопроса уникален)
 function qKey(q) {
   return q.section + '::' + q.q;
 }
 
-// Получить статус вопроса из прогресса
 function getQuestionStatus(q) {
   return state.progress[qKey(q)] || null;
 }
 
-// Сохранить статус вопроса
 function setQuestionStatus(q, status) {
-  state.progress[qKey(q)] = status; // 'correct' | 'wrong' | 'skipped'
-  saveProgress(state.progress);
+  state.progress[qKey(q)] = status;
+  saveJSON(PROGRESS_KEY, state.progress);
 }
 
-// Перемешать варианты ответа
 function shuffleOptions(q) {
   const indices = q.options.map((_, i) => i);
   const shuffledIdx = shuffle(indices);
@@ -522,56 +561,166 @@ function shuffleOptions(q) {
   return { ...q, options: newOptions, correct: newCorrect };
 }
 
-// ===================== ЭКРАНЫ =====================
+// ===================== МЕНЮ =====================
 
 function renderMenu() {
   state.screen = 'menu';
   const total = QUESTION_BANK.length;
   const answeredCount = Object.keys(state.progress).length;
   const correctCount = Object.values(state.progress).filter(s => s === 'correct').length;
+  const quizState = loadJSON(QUIZ_STATE_KEY, null);
+  const history = loadJSON(HISTORY_KEY, []);
 
-  app.innerHTML = `
+  let html = `
     <div class="card">
       <h1>Гарантийная работа с автотехникой КАМАЗ</h1>
       <p class="subtitle">Демо-версия · ${total} вопросов в банке</p>
+  `;
+
+  if (quizState && quizState.quiz && quizState.quiz.length > 0) {
+    const answeredInQuiz = quizState.answered.filter(Boolean).length;
+    html += `
+      <button class="menu-btn menu-btn-continue" id="btnContinue">
+        Продолжить тест
+        <span class="menu-btn-sub">Остановились на вопросе ${quizState.current + 1} из ${quizState.quiz.length} · отвечено ${answeredInQuiz}</span>
+      </button>
+      <button class="menu-btn menu-btn-reset" id="btnRestart">
+        Начать заново
+        <span class="menu-btn-sub">Сбросить текущий тест и начать новый</span>
+      </button>
+    `;
+  } else {
+    html += `
       <button class="menu-btn" id="btnQuiz">
         Начать тест
         <span class="menu-btn-sub">Случайные вопросы · пропуск · диаграмма результата</span>
       </button>
+    `;
+  }
+
+  html += `
       <button class="menu-btn" id="btnSections">
         По разделам
-        <span class="menu-btn-sub">Изучать вопросы по темам, смотреть свои ответы</span>
+        <span class="menu-btn-sub">Изучать вопросы по темам, отвечать, смотреть разбор</span>
       </button>
-      ${answeredCount > 0 ? `
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid #eee;font-size:14px;color:#666;">
-          <div>Прогресс: <b style="color:#2563eb;">${answeredCount}</b> из ${total} вопросов отвечено</div>
-          <div>Правильных: <b style="color:#16a34a;">${correctCount}</b></div>
-          <button class="back-btn" id="btnReset" style="margin-top:10px;color:#dc2626;">Сбросить прогресс</button>
-        </div>
-      ` : ''}
-    </div>
   `;
 
-  document.getElementById('btnQuiz').onclick = startQuiz;
+  if (history.length > 0) {
+    html += `
+      <button class="menu-btn" id="btnHistory">
+        Мои результаты
+        <span class="menu-btn-sub">${history.length} ${history.length === 1 ? 'пройденный тест' : 'пройденных тестов'}</span>
+      </button>
+    `;
+  }
+
+  if (answeredCount > 0) {
+    html += `
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #eee;font-size:14px;color:#666;">
+        <div>Общий прогресс по банку: <b style="color:#2563eb;">${answeredCount}</b> из ${total}</div>
+        <div>Правильных: <b style="color:#16a34a;">${correctCount}</b></div>
+        <button class="back-btn" id="btnReset" style="margin-top:10px;color:#dc2626;">Сбросить общий прогресс</button>
+      </div>
+    `;
+  }
+
+  html += `</div>`;
+  app.innerHTML = html;
+
+  const bc = document.getElementById('btnContinue');
+  if (bc) bc.onclick = continueQuiz;
+  const br = document.getElementById('btnRestart');
+  if (br) br.onclick = () => {
+    if (confirm('Сбросить текущий тест и начать новый?')) {
+      removeKey(QUIZ_STATE_KEY);
+      startQuiz();
+    }
+  };
+  const bq = document.getElementById('btnQuiz');
+  if (bq) bq.onclick = startQuiz;
   document.getElementById('btnSections').onclick = () => { state.screen = 'sections'; renderSections(); };
+  const bh = document.getElementById('btnHistory');
+  if (bh) bh.onclick = () => { state.screen = 'history'; renderHistory(); };
   const rst = document.getElementById('btnReset');
   if (rst) rst.onclick = () => {
-    if (confirm('Сбросить весь прогресс?')) {
+    if (confirm('Сбросить весь прогресс по банку?')) {
       state.progress = {};
-      clearProgress();
+      removeKey(PROGRESS_KEY);
       renderMenu();
     }
   };
 }
 
-// Группировка вопросов по разделам
+// ===================== ИСТОРИЯ =====================
+
+function renderHistory() {
+  state.screen = 'history';
+  const history = loadJSON(HISTORY_KEY, []);
+
+  let html = `
+    <div class="card">
+      <button class="back-btn" id="backBtn">← В меню</button>
+      <h2>Мои результаты</h2>
+      <p class="subtitle">Сохранённые прохождения теста</p>
+  `;
+
+  if (history.length === 0) {
+    html += `<p style="color:#888;">Пока нет сохранённых результатов.</p>`;
+  } else {
+    history.slice().reverse().forEach((h, ri) => {
+      const realIdx = history.length - 1 - ri;
+      const date = new Date(h.date);
+      const dateStr = date.toLocaleString('ru-RU', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      });
+      html += `
+        <div class="history-item">
+          <div class="history-info">
+            <div class="history-date">${dateStr}</div>
+            <div style="font-size:13px;color:#666;margin-top:4px;">
+              Правильных: ${h.correct} · Ошибок: ${h.wrong} · Пропущено: ${h.skipped}
+            </div>
+          </div>
+          <div class="history-score ${h.percent >= PASS_THRESHOLD ? 'pass' : 'fail'}">${h.percent}%</div>
+          <div class="history-actions">
+            <button class="history-btn" data-action="download" data-idx="${realIdx}">Скачать</button>
+            <button class="history-btn danger" data-action="delete" data-idx="${realIdx}">Удалить</button>
+          </div>
+        </div>
+      `;
+    });
+  }
+
+  html += `</div>`;
+  app.innerHTML = html;
+
+  document.getElementById('backBtn').onclick = () => renderMenu();
+
+  document.querySelectorAll('[data-action="download"]').forEach(b => {
+    b.onclick = () => {
+      const h = history[parseInt(b.dataset.idx)];
+      downloadReport(h);
+    };
+  });
+  document.querySelectorAll('[data-action="delete"]').forEach(b => {
+    b.onclick = () => {
+      if (!confirm('Удалить этот результат?')) return;
+      history.splice(parseInt(b.dataset.idx), 1);
+      saveJSON(HISTORY_KEY, history);
+      renderHistory();
+    };
+  });
+}
+
+// ===================== РАЗДЕЛЫ =====================
+
 function getSections() {
   const map = new Map();
   QUESTION_BANK.forEach(q => {
     if (!map.has(q.section)) map.set(q.section, []);
     map.get(q.section).push(q);
   });
-  // Сортируем по порядку
   const arr = Array.from(map.entries()).map(([name, items]) => ({ name, items }));
   arr.sort((a, b) => {
     const [a1, a2] = sectionOrder(a.name);
@@ -653,16 +802,22 @@ function renderSectionQuestions() {
   document.querySelectorAll('.question-list-item').forEach(el => {
     el.onclick = () => {
       state.viewQuestionIdx = parseInt(el.dataset.idx);
+      state.viewAnswer = null;
+      state.viewAnswered = false;
       state.screen = 'questionView';
       renderQuestionView();
     };
   });
 }
 
+// Просмотр вопроса из оглавления — ИНТЕРАКТИВНЫЙ
 function renderQuestionView() {
   const sections = getSections();
   const sec = sections.find(s => s.name === state.sectionKey);
+  if (!sec) { renderSections(); return; }
   const q = sec.items[state.viewQuestionIdx];
+  const selected = state.viewAnswer || [];
+  const isAnswered = state.viewAnswered;
 
   let html = `
     <div class="card">
@@ -673,41 +828,94 @@ function renderQuestionView() {
   `;
 
   q.options.forEach((opt, i) => {
+    const isSel = selected.includes(i);
     const isCorr = q.correct.includes(i);
     let cls = 'option';
     let mark = '';
-    if (isCorr) { cls += ' correct-answer'; mark = ' ✓'; }
+    if (isAnswered) {
+      if (isCorr && isSel) { cls += ' correct-answer'; mark = ' ✓'; }
+      else if (isCorr && !isSel) { cls += ' missed-answer'; mark = ' ✓ (пропущено)'; }
+      else if (!isCorr && isSel) { cls += ' wrong-answer'; mark = ' ✗'; }
+    } else {
+      if (isSel) cls += ' selected';
+    }
     html += `
-      <div class="${cls}">
+      <label class="${cls}" data-idx="${i}">
+        <input type="${q.type === 'multi' ? 'checkbox' : 'radio'}" name="q" ${isSel ? 'checked' : ''} ${isAnswered ? 'disabled' : ''}>
         <span>${opt}${mark}</span>
-      </div>
+      </label>
     `;
   });
 
-  html += `
-      <div class="feedback feedback-correct">
-        <div class="feedback-title">✅ Правильный ответ</div>
-        <div class="feedback-row"><b>Правильно:</b> ${q.correct.map(x => '«' + q.options[x] + '»').join(', ')}</div>
+  if (isAnswered) {
+    const isCorrect = arraysEqual(selected, q.correct);
+    html += `
+      <div class="feedback ${isCorrect ? 'feedback-correct' : 'feedback-wrong'}">
+        <div class="feedback-title">${isCorrect ? '✅ Верно' : '❌ Ошибка'}</div>
+        ${!isCorrect ? `
+          <div class="feedback-row"><b>Ваш ответ:</b> ${selected.length ? selected.map(x => '«' + q.options[x] + '»').join(', ') : '— не отвечено —'}</div>
+          <div class="feedback-row"><b>Правильно:</b> ${q.correct.map(x => '«' + q.options[x] + '»').join(', ')}</div>
+        ` : ''}
         <div class="source-block" style="margin-top:12px;">
           <div class="source-title">📖 Источник в документе</div>
           <div class="source-ref">${q.section} · ${q.ref}</div>
           <div class="source-text">«${q.source}»</div>
         </div>
       </div>
-    </div>
-  `;
+    `;
+  }
+
+  let buttons = '<div class="btn-row">';
+  if (!isAnswered) {
+    buttons += `<button class="btn btn-secondary" id="resetBtn" ${selected.length === 0 ? 'disabled' : ''}>Сбросить</button>`;
+    buttons += `<button class="btn btn-primary" id="answerBtn" ${selected.length === 0 ? 'disabled' : ''}>Ответить</button>`;
+  } else {
+    buttons += `<button class="btn btn-secondary" id="resetBtn">Пройти ещё раз</button>`;
+  }
+  buttons += '</div>';
+  html += buttons;
+  html += `</div>`;
   app.innerHTML = html;
+
+  document.querySelectorAll('.option').forEach(el => {
+    el.onclick = (e) => {
+      if (state.viewAnswered) return;
+      e.preventDefault();
+      const idx = parseInt(el.dataset.idx);
+      let sel = [...(state.viewAnswer || [])];
+      if (q.type === 'multi') {
+        if (sel.includes(idx)) sel = sel.filter(x => x !== idx);
+        else sel.push(idx);
+      } else {
+        sel = [idx];
+      }
+      state.viewAnswer = sel;
+      renderQuestionView();
+    };
+  });
 
   document.getElementById('backBtn').onclick = () => {
     state.screen = 'sectionQuestions';
     renderSectionQuestions();
   };
+
+  const answerBtn = document.getElementById('answerBtn');
+  if (answerBtn) answerBtn.onclick = () => {
+    state.viewAnswered = true;
+    const isCorrect = arraysEqual(state.viewAnswer || [], q.correct);
+    setQuestionStatus(q, isCorrect ? 'correct' : 'wrong');
+    renderQuestionView();
+  };
+
+  const resetBtn = document.getElementById('resetBtn');
+  if (resetBtn) resetBtn.onclick = () => {
+    state.viewAnswer = null;
+    state.viewAnswered = false;
+    renderQuestionView();
+  };
 }
 
 // ===================== ТЕСТ =====================
-
-const QUIZ_SIZE = 10; // для демо
-const PRIORITY_WEIGHT = 0.6;
 
 function isPriority(q) {
   const s = getMainSection(q.section);
@@ -799,6 +1007,16 @@ function buildQuiz() {
   return all.slice(0, QUIZ_SIZE);
 }
 
+function saveQuizState() {
+  saveJSON(QUIZ_STATE_KEY, {
+    quiz: state.quiz,
+    answers: state.answers,
+    answered: state.answered,
+    skipped: state.skipped,
+    current: state.current
+  });
+}
+
 function startQuiz() {
   const raw = buildQuiz();
   state.quiz = raw.map(shuffleOptions);
@@ -806,6 +1024,19 @@ function startQuiz() {
   state.answered = state.quiz.map(() => false);
   state.skipped = state.quiz.map(() => false);
   state.current = 0;
+  state.screen = 'quiz';
+  saveQuizState();
+  renderQuiz();
+}
+
+function continueQuiz() {
+  const qs = loadJSON(QUIZ_STATE_KEY, null);
+  if (!qs || !qs.quiz) { startQuiz(); return; }
+  state.quiz = qs.quiz;
+  state.answers = qs.answers;
+  state.answered = qs.answered;
+  state.skipped = qs.skipped;
+  state.current = qs.current;
   state.screen = 'quiz';
   renderQuiz();
 }
@@ -816,12 +1047,10 @@ function renderQuiz() {
   const isAnswered = state.answered[state.current];
   const isSkipped = state.skipped[state.current];
 
-  // Считаем статистику для диаграммы
   let correctCount = 0, wrongCount = 0, skippedCount = 0;
   state.quiz.forEach((qq, i) => {
     if (state.answered[i]) {
-      const userAns = state.answers[i] || [];
-      if (arraysEqual(userAns, qq.correct)) correctCount++;
+      if (arraysEqual(state.answers[i], qq.correct)) correctCount++;
       else wrongCount++;
     } else if (state.skipped[i]) {
       skippedCount++;
@@ -832,7 +1061,6 @@ function renderQuiz() {
   const percentWrong = totalProcessed > 0 ? Math.round(wrongCount / totalProcessed * 100) : 0;
   const percentSkipped = totalProcessed > 0 ? 100 - percentCorrect - percentWrong : 0;
 
-  // Круговая диаграмма
   const R = 60;
   const C = 2 * Math.PI * R;
   const dashCorrect = (percentCorrect / 100) * C;
@@ -844,7 +1072,7 @@ function renderQuiz() {
   let html = `
     <div class="card">
       <div class="exit-bar">
-        <button id="exitBtn">Выйти</button>
+        <button id="exitBtn">Выйти в меню</button>
       </div>
       <div class="progress-bar">
         <div class="progress-fill" style="width:${((state.current)/state.quiz.length)*100}%"></div>
@@ -895,9 +1123,8 @@ function renderQuiz() {
     `;
   }
 
-  html += `</div>`; // конец левой колонки
+  html += `</div>`;
 
-  // Правая колонка — диаграмма
   html += `
         <div>
           <div class="chart-box">
@@ -921,7 +1148,6 @@ function renderQuiz() {
       </div>
   `;
 
-  // Кнопки
   let buttons = '<div class="btn-row">';
   if (!isAnswered) {
     buttons += `<button class="btn btn-secondary" id="skipBtn">Пропустить</button>`;
@@ -935,11 +1161,9 @@ function renderQuiz() {
   }
   buttons += '</div>';
   html += buttons;
-
-  html += `</div>`; // конец card
+  html += `</div>`;
   app.innerHTML = html;
 
-  // Слушатели
   document.querySelectorAll('.option').forEach(el => {
     el.onclick = (e) => {
       if (state.answered[state.current]) return;
@@ -954,32 +1178,34 @@ function renderQuiz() {
       }
       state.answers[state.current] = sel;
       state.skipped[state.current] = false;
+      saveQuizState();
       renderQuiz();
     };
   });
 
   document.getElementById('exitBtn').onclick = () => {
-    if (confirm('Выйти из теста? Прогресс сохранится.')) {
-      renderMenu();
-    }
+    saveQuizState();
+    showToast('Прогресс сохранён');
+    renderMenu();
   };
 
   const skipBtn = document.getElementById('skipBtn');
   if (skipBtn) skipBtn.onclick = () => {
     state.skipped[state.current] = true;
-    // отмечаем в общем прогрессе как пропущенный
     setQuestionStatus(q, 'skipped');
+    saveQuizState();
     if (state.current < state.quiz.length - 1) {
       state.current++;
+      saveQuizState();
       renderQuiz();
     } else {
-      // ищем пропущенные
       const firstSkipped = state.skipped.findIndex((s, i) => s && !state.answered[i]);
       if (firstSkipped !== -1) {
         state.current = firstSkipped;
+        saveQuizState();
         renderQuiz();
       } else {
-        renderResults();
+        finishQuiz();
       }
     }
   };
@@ -988,10 +1214,10 @@ function renderQuiz() {
   if (answerBtn) answerBtn.onclick = () => {
     state.answered[state.current] = true;
     state.skipped[state.current] = false;
-    // сохраняем в прогресс
     const userAns = state.answers[state.current] || [];
     const isCorrect = arraysEqual(userAns, q.correct);
     setQuestionStatus(q, isCorrect ? 'correct' : 'wrong');
+    saveQuizState();
     renderQuiz();
   };
 
@@ -999,15 +1225,16 @@ function renderQuiz() {
   if (nextBtn) nextBtn.onclick = () => {
     if (state.current < state.quiz.length - 1) {
       state.current++;
+      saveQuizState();
       renderQuiz();
     } else {
-      // если есть пропущенные — вернуться к ним
       const firstSkipped = state.skipped.findIndex((s, i) => s && !state.answered[i]);
       if (firstSkipped !== -1) {
         state.current = firstSkipped;
+        saveQuizState();
         renderQuiz();
       } else {
-        renderResults();
+        finishQuiz();
       }
     }
   };
@@ -1019,11 +1246,11 @@ function renderQuiz() {
     if (hasSkipped || hasUnanswered) {
       if (!confirm('Есть пропущенные вопросы. Завершить тест?')) return;
     }
-    renderResults();
+    finishQuiz();
   };
 }
 
-function renderResults() {
+function finishQuiz() {
   let correctCount = 0, wrongCount = 0, skippedCount = 0;
   state.quiz.forEach((q, i) => {
     if (state.answered[i]) {
@@ -1036,24 +1263,216 @@ function renderResults() {
 
   const answeredTotal = correctCount + wrongCount;
   const percent = answeredTotal > 0 ? Math.round(correctCount / answeredTotal * 100) : 0;
-  const pass = percent >= PASS_THRESHOLD;
+
+  // Сохраняем результат в историю
+  const history = loadJSON(HISTORY_KEY, []);
+  const resultItem = {
+    date: Date.now(),
+    percent,
+    correct: correctCount,
+    wrong: wrongCount,
+    skipped: skippedCount,
+    total: state.quiz.length,
+    // Сохраняем детальный разбор
+    details: state.quiz.map((q, i) => ({
+      q: q.q,
+      section: q.section,
+      ref: q.ref,
+      source: q.source,
+      options: q.options,
+      correct: q.correct,
+      userAnswer: state.answers[i] || [],
+      isCorrect: state.answered[i] && arraysEqual(state.answers[i], q.correct),
+      wasSkipped: !state.answered[i]
+    }))
+  };
+  history.push(resultItem);
+  // Храним максимум 20 последних
+  if (history.length > 20) history.shift();
+  saveJSON(HISTORY_KEY, history);
+
+  // Очищаем состояние незавершённого теста
+  removeKey(QUIZ_STATE_KEY);
+
+  state.lastResult = resultItem;
+  state.screen = 'results';
+  renderResults();
+}
+
+function renderResults() {
+  const r = state.lastResult;
+  const pass = r.percent >= PASS_THRESHOLD;
 
   let html = `
     <div class="card">
       <h1>Результат</h1>
-      <div class="result-score ${pass ? 'pass' : 'fail'}">${percent}%</div>
+      <div class="result-score ${pass ? 'pass' : 'fail'}">${r.percent}%</div>
       <div class="result-label">${pass ? '✅ Тест пройден' : '❌ Тест не пройден'} (порог ${PASS_THRESHOLD}%)</div>
-      <div class="stat-row"><span>Всего вопросов</span><b>${state.quiz.length}</b></div>
-      <div class="stat-row"><span>Правильных</span><b style="color:#16a34a;">${correctCount}</b></div>
-      <div class="stat-row"><span>Ошибок</span><b style="color:#dc2626;">${wrongCount}</b></div>
-      <div class="stat-row"><span>Пропущено</span><b style="color:#9ca3af;">${skippedCount}</b></div>
-      <div class="stat-row"><span>Процент считается от</span><b>${answeredTotal} отвеченных</b></div>
+      <div class="stat-row"><span>Всего вопросов</span><b>${r.total}</b></div>
+      <div class="stat-row"><span>Правильных</span><b style="color:#16a34a;">${r.correct}</b></div>
+      <div class="stat-row"><span>Ошибок</span><b style="color:#dc2626;">${r.wrong}</b></div>
+      <div class="stat-row"><span>Пропущено</span><b style="color:#9ca3af;">${r.skipped}</b></div>
     </div>
-    <button class="btn btn-primary" onclick="location.reload()">Пройти заново</button>
-    <button class="btn btn-secondary" style="margin-top:10px;" onclick="window.location.href='#menu'; location.reload();">В главное меню</button>
+    <button class="btn btn-primary" id="downloadBtn">📥 Скачать разбор ошибок</button>
+    <button class="btn btn-secondary" style="margin-top:10px;" id="toMenuBtn">В главное меню</button>
+    <button class="btn btn-secondary" style="margin-top:10px;" id="againBtn">Пройти ещё раз</button>
   `;
   app.innerHTML = html;
   window.scrollTo(0, 0);
+
+  document.getElementById('downloadBtn').onclick = () => downloadReport(r);
+  document.getElementById('toMenuBtn').onclick = () => renderMenu();
+  document.getElementById('againBtn').onclick = () => {
+    if (confirm('Начать новый тест?')) startQuiz();
+  };
+}
+
+// ===================== СКАЧИВАНИЕ РАЗБОРА =====================
+
+function downloadReport(result) {
+  const date = new Date(result.date);
+  const dateStr = date.toLocaleString('ru-RU');
+
+  let html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Разбор ошибок — ${dateStr}</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f0f2f5;
+    margin: 0;
+    padding: 24px;
+    color: #1a1a1a;
+    line-height: 1.6;
+  }
+  .container { max-width: 800px; margin: 0 auto; }
+  .header {
+    background: #fff; border-radius: 14px; padding: 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06); margin-bottom: 16px;
+    text-align: center;
+  }
+  .header h1 { font-size: 22px; margin: 0 0 8px; }
+  .date { color: #888; font-size: 14px; }
+  .score {
+    font-size: 48px; font-weight: 700; margin: 16px 0 8px;
+  }
+  .score.pass { color: #16a34a; }
+  .score.fail { color: #dc2626; }
+  .stats {
+    display: flex; justify-content: center; gap: 24px; margin-top: 16px;
+    font-size: 14px;
+  }
+  .stats b { font-size: 18px; display: block; }
+  .stats .s-correct b { color: #16a34a; }
+  .stats .s-wrong b { color: #dc2626; }
+  .stats .s-skipped b { color: #9ca3af; }
+  .q-card {
+    background: #fff; border-radius: 14px; padding: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06); margin-bottom: 16px;
+    border-left: 4px solid #dc2626;
+  }
+  .q-card.correct { border-left-color: #16a34a; }
+  .q-card.skipped { border-left-color: #9ca3af; }
+  .q-label {
+    display: inline-block; background: #eef2ff; color: #4338ca;
+    font-size: 12px; font-weight: 600; padding: 4px 10px;
+    border-radius: 6px; margin-bottom: 10px;
+  }
+  .q-text { font-size: 16px; font-weight: 600; margin: 0 0 12px; }
+  .opt {
+    padding: 10px 14px; border-radius: 8px; margin-bottom: 8px;
+    font-size: 14px; border: 1px solid #e5e7eb;
+  }
+  .opt.correct { background: #f0fdf4; border-color: #16a34a; color: #16a34a; font-weight: 600; }
+  .opt.wrong { background: #fef2f2; border-color: #dc2626; color: #dc2626; }
+  .opt.missed { background: #fffbeb; border-color: #f59e0b; color: #b45309; font-weight: 600; }
+  .summary {
+    margin-top: 12px; padding: 12px 14px; border-radius: 8px;
+    font-size: 14px;
+  }
+  .summary.correct { background: #f0fdf4; }
+  .summary.wrong { background: #fef2f2; }
+  .summary.skipped { background: #f9fafb; }
+  .source {
+    background: #fffbeb; border-left: 4px solid #f59e0b;
+    padding: 12px 14px; border-radius: 8px; margin-top: 12px;
+    font-size: 13px;
+  }
+  .source-title { font-weight: 700; color: #b45309; margin-bottom: 6px; }
+  .source-ref { font-weight: 600; color: #92400e; margin-bottom: 6px; font-size: 12px; }
+  .source-text { font-style: italic; color: #333; }
+  @media print {
+    body { background: #fff; padding: 0; }
+    .q-card { box-shadow: none; border: 1px solid #eee; page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Разбор теста по гарантийной работе КАМАЗ</h1>
+    <div class="date">${dateStr}</div>
+    <div class="score ${result.percent >= PASS_THRESHOLD ? 'pass' : 'fail'}">${result.percent}%</div>
+    <div>${result.percent >= PASS_THRESHOLD ? '✅ Тест пройден' : '❌ Тест не пройден'}</div>
+    <div class="stats">
+      <div class="s-correct">Правильных<b>${result.correct}</b></div>
+      <div class="s-wrong">Ошибок<b>${result.wrong}</b></div>
+      <div class="s-skipped">Пропущено<b>${result.skipped}</b></div>
+    </div>
+  </div>
+`;
+
+  result.details.forEach((d, i) => {
+    const cls = d.isCorrect ? 'correct' : (d.wasSkipped ? 'skipped' : '');
+    html += `<div class="q-card ${cls}">
+      <div class="q-label">${d.section} · ${d.ref}</div>
+      <div class="q-text">${i + 1}. ${d.q}</div>`;
+
+    d.options.forEach((opt, oi) => {
+      const isUser = d.userAnswer.includes(oi);
+      const isCorr = d.correct.includes(oi);
+      let optCls = 'opt';
+      let mark = '';
+      if (isCorr && isUser) { optCls += ' correct'; mark = ' ✓'; }
+      else if (isCorr && !isUser) { optCls += ' missed'; mark = ' ✓ (пропущено)'; }
+      else if (!isCorr && isUser) { optCls += ' wrong'; mark = ' ✗'; }
+      html += `<div class="${optCls}">${opt}${mark}</div>`;
+    });
+
+    if (d.isCorrect) {
+      html += `<div class="summary correct">✅ Верно</div>`;
+    } else if (d.wasSkipped) {
+      html += `<div class="summary skipped">— Пропущено</div>`;
+    } else {
+      html += `<div class="summary wrong">
+        <b>Ваш ответ:</b> ${d.userAnswer.length ? d.userAnswer.map(x => '«' + d.options[x] + '»').join(', ') : '— не отвечено —'}<br>
+        <b>Правильно:</b> ${d.correct.map(x => '«' + d.options[x] + '»').join(', ')}
+      </div>`;
+    }
+
+    html += `<div class="source">
+      <div class="source-title">📖 Источник в документе</div>
+      <div class="source-ref">${d.section} · ${d.ref}</div>
+      <div class="source-text">«${d.source}»</div>
+    </div>
+  </div>`;
+  });
+
+  html += `</div></body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date(result.date).toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  a.href = url;
+  a.download = `razbor-testa-${ts}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('Файл скачан');
 }
 
 // ===================== СТАРТ =====================
